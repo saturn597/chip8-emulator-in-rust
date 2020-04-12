@@ -598,6 +598,24 @@ impl fmt::Display for Pixel {
     }
 }
 
+fn draw(chip8: &mut Chip8) {
+    for item in chip8.draw_queue.iter() {
+        let (x, y) = item;
+        let x = *x;
+        let y = *y;
+
+        let pixel = chip8.pixels[x as usize][y as usize];
+
+        let ch = match pixel {
+            Pixel::On => '#',
+            Pixel::Off => ' ',
+        };
+        ncurses::mvaddch(y as i32, x as i32, ch as ncurses::chtype);
+    }
+    ncurses::refresh();
+    chip8.draw_queue.clear();
+}
+
 pub fn run(rom: Vec<u8>) {
     let keyboard: HashMap<char, usize> = KEYBOARD_MAP.iter().cloned().collect();
 
@@ -611,9 +629,14 @@ pub fn run(rom: Vec<u8>) {
     loop {
         let start_time = time::Instant::now();
 
-        let ch = char::from_u32(ncurses::getch() as u32);
+        let ch = ncurses::getch();
+        if ch == 27 {  // ESC (and other keys)
+            ncurses::endwin();
+            break;
+        }
 
-        if let Some(k) = ch {
+        let character = char::from_u32(ch as u32);
+        if let Some(k) = character {
             if let Some(key) = keyboard.get(&k) {
                 chip8.keys[*key] = Key::Down;
             }
@@ -621,29 +644,13 @@ pub fn run(rom: Vec<u8>) {
 
         chip8.emulate_cycle();
 
-
-        for item in chip8.draw_queue.iter() {
-            let (x, y) = item;
-            let x = *x;
-            let y = *y;
-
-            let pixel = chip8.pixels[x as usize][y as usize];
-
-            let ch = match pixel {
-                Pixel::On => '#',
-                Pixel::Off => ' ',
-            };
-            ncurses::mvaddch(y as i32, x as i32, ch as ncurses::chtype);
-        }
-        ncurses::refresh();
-        chip8.draw_queue.clear();
+        draw(&mut chip8);
 
         let elapsed = time::Instant::now().duration_since(start_time).as_millis();
         let remaining = (CYCLE_DURATION as u128).saturating_sub(elapsed);
-
         let duration = time::Duration::from_millis(remaining as u64);
         thread::sleep(duration);
     }
 
-    // TODO: ensure ncurses cleanup, allow quitting
+    ncurses::endwin();
 }
