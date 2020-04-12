@@ -25,6 +25,7 @@ const KEYBOARD_MAP: [(char, usize); 16] = [
     ('v', 0xf),
 ];
 
+const CYCLE_DURATION: u8 = 2;  // in ms
 const INSTRUCTIONS_START: u16 = 0x200;
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
@@ -117,7 +118,7 @@ pub struct Chip8 {
     delay_timer: Timer,
     sound_timer: u8,  // TODO: need to implement this so it counts down
 
-    draw_queue: Vec<(u8, u8, Pixel)>,
+    draw_queue: Vec<(u8, u8)>,
 
 }
 
@@ -173,6 +174,7 @@ impl Chip8 {
             0x8 => {
                 match instr & 0x00f {
                     0x0 => self.reg_set(instr),
+                    0x3 => self.reg_xor(instr),
                     0x2 => self.reg_and(instr),
                     0x4 => self.reg_add(instr),
                     0x5 => self.reg_subtract(instr),
@@ -199,6 +201,7 @@ impl Chip8 {
             0xf => {
                 match instr & 0x00ff {
                     0x07 => self.get_delay_timer(instr),
+                    0x0a => self.await_key(instr),
                     0x15 => self.set_delay_timer(instr),
                     0x18 => self.set_sound_timer(instr),
                     0x1e => self.add_reg_to_i(instr),
@@ -248,9 +251,21 @@ impl Chip8 {
         self.pc = self.pc + 2;
     }
 
+    fn await_key(&mut self, _instr: u16) {
+        // TODO: implement this
+        self.pc = self.pc + 2;
+    }
+
     fn clear_screen(&mut self, _instr: u16) {
         // TODO: should add all pixels to self.draw_queue
         self.pixels = [[Pixel::Off; SCREEN_HEIGHT]; SCREEN_WIDTH];
+
+        for y in 0..SCREEN_HEIGHT {
+            for x in 0..SCREEN_WIDTH {
+                self.draw_queue.push((x as u8, y as u8));
+            }
+        }
+
         self.pc = self.pc + 2;
     }
 
@@ -290,7 +305,7 @@ impl Chip8 {
                         collision = true;
                     }
                     self.pixels[x][y] = pixel.flip();
-                    self.draw_queue.push((x as u8, y as u8, self.pixels[x][y]));
+                    self.draw_queue.push((x as u8, y as u8));
                 }
             }
         }
@@ -416,6 +431,12 @@ impl Chip8 {
 
         //println!("result is: {}", self.v[reg1]);
 
+        self.pc = self.pc + 2;
+    }
+
+    fn reg_xor(&mut self, instr: u16) {
+        let (reg1, reg2) = self.reg_get_for_math(instr);
+        self.v[reg1] = self.v[reg1] ^ self.v[reg2];
         self.pc = self.pc + 2;
     }
 
@@ -588,6 +609,8 @@ pub fn run(rom: Vec<u8>) {
 
     let mut chip8 = Chip8::initialize(rom);
     loop {
+        let start_time = time::Instant::now();
+
         let ch = char::from_u32(ncurses::getch() as u32);
 
         if let Some(k) = ch {
@@ -600,19 +623,27 @@ pub fn run(rom: Vec<u8>) {
 
 
         for item in chip8.draw_queue.iter() {
-            let (x, y, pixel) = item;
+            let (x, y) = item;
+            let x = *x;
+            let y = *y;
+
+            let pixel = chip8.pixels[x as usize][y as usize];
 
             let ch = match pixel {
                 Pixel::On => '#',
                 Pixel::Off => ' ',
             };
-            ncurses::mvaddch(*y as i32, *x as i32, ch as ncurses::chtype);
+            ncurses::mvaddch(y as i32, x as i32, ch as ncurses::chtype);
         }
         ncurses::refresh();
         chip8.draw_queue.clear();
 
+        let elapsed = time::Instant::now().duration_since(start_time).as_millis();
+        let remaining = (CYCLE_DURATION as u128).saturating_sub(elapsed);
 
-        let duration = time::Duration::from_millis(2);
-        thread::sleep(duration);  // TODO: fix the timing
+        let duration = time::Duration::from_millis(remaining as u64);
+        thread::sleep(duration);
     }
+
+    // TODO: ensure ncurses cleanup, allow quitting
 }
