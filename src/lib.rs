@@ -607,10 +607,10 @@ fn draw(chip8: &mut Chip8) {
         let pixel = chip8.pixels[x as usize][y as usize];
 
         let ch = match pixel {
-            Pixel::On => '#',
-            Pixel::Off => ' ',
+            Pixel::On => ncurses::ACS_BLOCK(),
+            Pixel::Off => ' ' as ncurses::chtype,
         };
-        ncurses::mvaddch(y as i32, x as i32, ch as ncurses::chtype);
+        ncurses::mvaddch(y as i32, x as i32, ch);
     }
     ncurses::refresh();
     chip8.draw_queue.clear();
